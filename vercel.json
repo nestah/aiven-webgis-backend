@@ -13,7 +13,11 @@
     },
     {
       "src": "/(.*)",
-      "dest": "/index.js"
+      "dest": "/index.js",
+      "headers":{
+        "Access-Control-Allow-Origin":"*"
+      }
     }
+   
   ]
 }
