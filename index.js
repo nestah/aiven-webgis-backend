@@ -1,4 +1,4 @@
-// imports
+// Imports
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -10,28 +10,25 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
+// Middleware
 app.use(express.json());
 
-// Configure multer for CSV files
+// CORS Configuration
+const corsOptions = {
+    origin: 'https://gtl-afya.netlify.app', // Frontend URL
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, // Allow cookies or credentials if needed
+    optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
+
+// Configure multer for CSV uploads
 const storage = multer.diskStorage({
     destination: 'uploads/',
     filename: (req, file, cb) => {
         cb(null, `${Date.now()}-${file.originalname}`);
     }
 });
-
-// Update CORS options to allow your frontend domain
-const corsOptions = {
-    origin: 'https://gtl-afya.netlify.app', // Your frontend URL
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true, // Enable if you're using cookies or credentials
-    optionsSuccessStatus: 204,
-};
-
-// Apply the CORS middleware globally
-app.use(cors(corsOptions));
-
 const upload = multer({
     storage: storage,
     fileFilter: (req, file, cb) => {
@@ -50,47 +47,46 @@ const pool = new Pool({
     database: process.env.PG_DATABASE,
     password: process.env.PG_PASSWORD,
     port: process.env.PG_PORT,
-    ssl:{
-        rejectUnauthorized:false,
+    ssl: {
+        rejectUnauthorized: false, // Required for cloud-hosted PostgreSQL
     },
 });
 
 // Validation helper functions
 const validateRequiredFields = (row) => {
     const requiredFields = ['uid', 'name', 'facility_type'];
-    const missingFields = requiredFields.filter(field => !row[field] || String(row[field]).trim() === '');
-    return missingFields;
+    return requiredFields.filter(field => !row[field] || String(row[field]).trim() === '');
 };
 
 const checkForDuplicateUIDs = async (data) => {
     const uids = data.map(row => row.uid);
     const uniqueUids = new Set(uids);
-    
+
     if (uids.length !== uniqueUids.size) {
         const duplicates = uids.filter((uid, index) => uids.indexOf(uid) !== index);
         return {
             hasDuplicates: true,
-            duplicates: [...new Set(duplicates)]
+            duplicates: [...new Set(duplicates)],
         };
     }
-    
-    // Check against database
+
     const existingUids = await pool.query(
         'SELECT uid FROM temp_upload WHERE uid = ANY($1)',
         [Array.from(uniqueUids)]
     );
-    
+
     if (existingUids.rows.length > 0) {
         return {
             hasDuplicates: true,
-            duplicates: existingUids.rows.map(row => row.uid)
+            duplicates: existingUids.rows.map(row => row.uid),
         };
     }
-    
+
     return { hasDuplicates: false, duplicates: [] };
 };
 
-// API Routes
+// API Endpoints
+// Fetch all health facilities
 app.get('/api/facilities', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM health_facilities');
@@ -101,6 +97,7 @@ app.get('/api/facilities', async (req, res) => {
     }
 });
 
+// Fetch facility types
 app.get('/api/facility-types', async (req, res) => {
     try {
         const result = await pool.query(
@@ -113,6 +110,7 @@ app.get('/api/facility-types', async (req, res) => {
     }
 });
 
+// Fetch uploaded facilities
 app.get('/api/uploaded-facilities', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM temp_upload ORDER BY county');
@@ -123,6 +121,7 @@ app.get('/api/uploaded-facilities', async (req, res) => {
     }
 });
 
+// Upload and process CSV file
 app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -134,32 +133,25 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
     let rowNumber = 1;
 
     try {
-        // Parse CSV file without field validation
         await new Promise((resolve, reject) => {
             fs.createReadStream(filePath)
-                .pipe(csvParser({
-                    mapValues: ({ value }) => value.trim()
-                }))
-                .on('data', (row) => {
-                    data.push(row);
-                })
+                .pipe(csvParser({ mapValues: ({ value }) => value.trim() }))
+                .on('data', (row) => data.push(row))
                 .on('end', resolve)
                 .on('error', reject);
         });
 
-        // Check for duplicate UIDs first
         const duplicateCheck = await checkForDuplicateUIDs(data);
         if (duplicateCheck.hasDuplicates) {
             return res.status(400).json({
                 error: 'Duplicate UIDs detected',
                 details: {
                     message: 'The following UIDs already exist in the database or are duplicated in the CSV:',
-                    duplicateUIDs: duplicateCheck.duplicates
-                }
+                    duplicateUIDs: duplicateCheck.duplicates,
+                },
             });
         }
 
-        // Validate required fields only if there are no duplicate UIDs
         rowNumber = 1;
         for (const row of data) {
             rowNumber++;
@@ -169,15 +161,13 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
             }
         }
 
-        // If there are validation errors, return them
         if (errors.length > 0) {
             return res.status(400).json({
                 error: 'Validation errors',
-                details: errors
+                details: errors,
             });
         }
 
-        // Begin transaction for data insertion if no errors
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
@@ -186,50 +176,25 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
                 const columns = Object.keys(row);
                 const values = Object.values(row);
                 const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
-                
-                const query = `
-                    INSERT INTO temp_upload (${columns.join(', ')})
-                    VALUES (${placeholders})
-                `;
 
-                await client.query(query, values);
+                await client.query(
+                    `INSERT INTO temp_upload (${columns.join(', ')}) VALUES (${placeholders})`,
+                    values
+                );
             }
 
             await client.query('COMMIT');
-            res.json({
-                message: 'CSV data successfully uploaded',
-                rowsProcessed: data.length
-            });
-        } catch (error) {
+            res.json({ message: 'CSV data successfully uploaded', rowsProcessed: data.length });
+        } catch (err) {
             await client.query('ROLLBACK');
-            console.error('Database error:', error);
-            
-            if (error.code === '23505') { // Unique violation
-                res.status(400).json({
-                    error: 'Duplicate entry',
-                    details: {
-                        message: 'A record with this UID already exists in the database.',
-                        constraint: error.constraint
-                    }
-                });
-            } else {
-                res.status(500).json({
-                    error: 'Database error',
-                    details: {
-                        message: 'Failed to insert data into database',
-                        errorCode: error.code
-                    }
-                });
-            }
+            console.error('Database error:', err);
+            res.status(500).json({ error: 'Database error', details: err.message });
         } finally {
             client.release();
         }
-    } catch (error) {
-        console.error('Error processing CSV:', error);
-        res.status(500).json({
-            error: 'CSV processing error',
-            details: error.message
-        });
+    } catch (err) {
+        console.error('Error processing CSV:', err);
+        res.status(500).json({ error: 'CSV processing error', details: err.message });
     } finally {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -239,13 +204,11 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        error: 'Server error',
-        details: err.message
-    });
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error', details: err.message });
 });
 
+// Start the server
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
