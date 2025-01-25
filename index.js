@@ -15,7 +15,7 @@ app.use(express.json());
 
 // CORS Configuration
 const corsOptions = {
-    origin: 'https://gtl-afya.netlify.app', // Frontend URL
+    origin: '*', // Frontend URL
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true, // Allow cookies or credentials if needed
     optionsSuccessStatus: 204,
