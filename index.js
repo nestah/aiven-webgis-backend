@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const csvParser = require('csv-parser');
 const fs = require('fs');
+const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
@@ -21,6 +22,15 @@ const storage = multer.diskStorage({
     }
 });
 
+// CORS configuration
+const corsOptions = {
+    origin: 'https://gtl-afya.netlify.app', // Allow your frontend's domain
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'], // Allowed headers
+  };
+  
+  app.use(cors(corsOptions));
+  
 
 const upload = multer({
     storage: storage,
