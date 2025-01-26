@@ -7,7 +7,7 @@ const csvParser = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const tmp = require('tmp');  // Temporary file storage for Vercel
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,21 +25,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Configure multer for CSV uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        // Use a temporary directory for file storage in production (Vercel)
-        tmp.dir({ unsafeCleanup: true }, (err, dirPath) => {
-            if (err) {
-                return cb(err, null);
-            }
-            cb(null, dirPath);
-        });
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname}`);
-    }
-});
-
+const storage = multer.memoryStorage();
 const upload = multer({
     storage: storage,
     fileFilter: (req, file, cb) => {
@@ -138,15 +124,18 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
         return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const filePath = req.file.path;
     const data = [];
     const errors = [];
     let rowNumber = 1;
 
     try {
+        const csvBuffer = req.file.buffer;
+        const csvStream = csvParser({ mapValues: ({ value }) => value.trim() });
+
         await new Promise((resolve, reject) => {
-            fs.createReadStream(filePath)
-                .pipe(csvParser({ mapValues: ({ value }) => value.trim() }))
+            const readable = require('stream').Readable.from(csvBuffer.toString());
+            readable
+                .pipe(csvStream)
                 .on('data', (row) => data.push(row))
                 .on('end', resolve)
                 .on('error', reject);
@@ -206,10 +195,6 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
     } catch (err) {
         console.error('Error processing CSV:', err);
         res.status(500).json({ error: 'CSV processing error', details: err.message });
-    } finally {
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath); // Clean up temporary file
-        }
     }
 });
 
