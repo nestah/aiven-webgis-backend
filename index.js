@@ -137,7 +137,7 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
     try {
         const csvBuffer = req.file.buffer;
         const csvStream = csvParser({
-            separator: '\t', // Use tab as the delimiter
+            separator: ',', // Use tab as the delimiter
             mapValues: ({ value }) => value.trim(),
         });
 
