@@ -130,13 +130,20 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
 
     try {
         const csvBuffer = req.file.buffer;
-        const csvStream = csvParser({ mapValues: ({ value }) => value.trim() });
+        const csvStream = csvParser({
+            separator: '\t', // Use tab as the delimiter
+            mapValues: ({ value }) => value.trim(),
+        });
 
         await new Promise((resolve, reject) => {
             const readable = require('stream').Readable.from(csvBuffer.toString());
             readable
                 .pipe(csvStream)
-                .on('data', (row) => data.push(row))
+                .on('data', (row) => {
+                    console.log('Parsed Row:', row);
+                    data.push(row)
+                }
+                    )
                 .on('end', resolve)
                 .on('error', reject);
         });
