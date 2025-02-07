@@ -68,7 +68,7 @@ const checkForDuplicateUIDs = async (data) => {
     }
 
     const existingUids = await pool.query(
-        'SELECT uid FROM temp_upload WHERE uid = ANY($1)',
+        'SELECT uid FROM upload2_facilities WHERE uid = ANY($1)',
         [Array.from(uniqueUids)]
     );
 
@@ -110,7 +110,7 @@ app.get('/api/facility-types', async (req, res) => {
 // Fetch uploaded facilities
 app.get('/api/uploaded-facilities', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM temp_upload ORDER BY county');
+        const result = await pool.query('SELECT * FROM upload2_facilities ORDER BY county');
         res.json(result.rows);
     } catch (err) {
         console.error('Error fetching uploaded facilities:', err);
@@ -185,7 +185,7 @@ app.post('/api/upload-csv', upload.single('file'), async (req, res) => {
                 const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
 
                 await client.query(
-                    `INSERT INTO temp_upload (${columns.join(', ')}) VALUES (${placeholders})`,
+                    `INSERT INTO upload2_facilities (${columns.join(', ')}) VALUES (${placeholders})`,
                     values
                 );
             }
