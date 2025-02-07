@@ -51,14 +51,17 @@ const pool = new Pool({
 
 // Validation helper functions
 const validateRequiredFields = (row) => {
-    const requiredFields = ['uid', 'name', 'facility_type'];
+    const requiredFields = ['name', 'facility_type'];
     return requiredFields.filter(field => !row[field] || String(row[field]).trim() === '');
 };
 
 const checkForDuplicateUIDs = async (data) => {
-    const uids = data.map(row => row.uid);
+    // Filter out rows with empty or null UIDs
+    const validRows = data.filter(row => row.uid && String(row.uid).trim() !== '');
+    const uids = validRows.map(row => row.uid);
     const uniqueUids = new Set(uids);
 
+    // Check for duplicates in the CSV
     if (uids.length !== uniqueUids.size) {
         const duplicates = uids.filter((uid, index) => uids.indexOf(uid) !== index);
         return {
@@ -67,16 +70,19 @@ const checkForDuplicateUIDs = async (data) => {
         };
     }
 
-    const existingUids = await pool.query(
-        'SELECT uid FROM upload2_facilities WHERE uid = ANY($1)',
-        [Array.from(uniqueUids)]
-    );
+    // Check for duplicates in the database
+    if (uids.length > 0) {
+        const existingUids = await pool.query(
+            'SELECT uid FROM upload2_facilities WHERE uid = ANY($1)',
+            [Array.from(uniqueUids)]
+        );
 
-    if (existingUids.rows.length > 0) {
-        return {
-            hasDuplicates: true,
-            duplicates: existingUids.rows.map(row => row.uid),
-        };
+        if (existingUids.rows.length > 0) {
+            return {
+                hasDuplicates: true,
+                duplicates: existingUids.rows.map(row => row.uid),
+            };
+        }
     }
 
     return { hasDuplicates: false, duplicates: [] };
